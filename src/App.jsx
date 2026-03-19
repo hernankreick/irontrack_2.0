@@ -802,17 +802,7 @@ function GymApp() {
   const toast2 = msg => { setToast(msg); setTimeout(()=>setToast(null),2200); };
 
 
-  try {
-    const alumno = alumnos.find(a => a.id === alumnoId);
-    if(!alumno?.onesignal_id) return;
-    await fetch("https://onesignal.com/api/v1/notifications", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Authorization": "Basic os_v2_app_rrpcxujkzbexve7l7ud6lttu24fxxofjnc3eke5wljs2bkhvuto27d46nxt5r7pvgtnpsrxphnbgr35vfdsiesntivkncl75aq4gyuy" },
-      body: JSON.stringify({
-        app_id: "8c5e2bd1-2ac8-497a-93eb-fd07e5ce74d7",
-        include_player_ids: [alumno.onesignal_id],
-        headings: { en: "IRON TRACK 💪", es: "IRON TRACK 💪" },
-        contents: { en: mensaje, es: mensaje },
+  
    
 
   const R = 26; const circ = 2*Math.PI*R;
