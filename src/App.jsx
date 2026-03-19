@@ -801,7 +801,7 @@ function GymApp() {
 
   const toast2 = msg => { setToast(msg); setTimeout(()=>setToast(null),2200); };
 
-const notifyAlumno = async (alumnoId, mensaje) => {
+
   try {
     const alumno = alumnos.find(a => a.id === alumnoId);
     if(!alumno?.onesignal_id) return;
