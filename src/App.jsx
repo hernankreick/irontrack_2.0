@@ -813,10 +813,7 @@ function GymApp() {
         include_player_ids: [alumno.onesignal_id],
         headings: { en: "IRON TRACK 💪", es: "IRON TRACK 💪" },
         contents: { en: mensaje, es: mensaje },
-      })
-    });
-  } catch(e) { console.log("Push error:", e); }
-};
+   
 
   const R = 26; const circ = 2*Math.PI*R;
 
