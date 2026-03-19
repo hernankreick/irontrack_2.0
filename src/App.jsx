@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { useAlumnos } from './hooks/useAlumnos.js';import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
 
 
 const PATS = {
