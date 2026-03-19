@@ -593,22 +593,7 @@ const IconSettings = ({size=18, color="currentColor"}) => (
 function GymApp() {
   const [tab, setTab] = useState("plan");
   const [tabMain, setTabMain] = useState("entrenador"); // entrenador | alumno
-  const [alumnos, setAlumnos] = useState([]);
-  const [sesiones, setSesiones] = useState([]);
-  const [onboardStep, setOnboardStep] = useState(0);
-  const [onboardDone, setOnboardDone] = useState(()=>{ try{return !!localStorage.getItem('it_onboard_done');}catch(e){return false;} });
-  const [alumnoActivo, setAlumnoActivo] = useState(null);
-  const [editAlumnoModal, setEditAlumnoModal] = useState(null);
-  const [editAlumnoEmail, setEditAlumnoEmail] = useState("");
-  const [editAlumnoPass, setEditAlumnoPass] = useState("");
-  const [registrosSubTab, setRegistrosSubTab] = useState(0);
-  const [rutinasSB, setRutinasSB] = useState([]);
-  const [alumnoProgreso, setAlumnoProgreso] = useState([]);
-  const [alumnoSesiones, setAlumnoSesiones] = useState([]);
-  const [loadingSB, setLoadingSB] = useState(false);
-  const [newAlumnoForm, setNewAlumnoForm] = useState(false);
-  const [newAlumnoData, setNewAlumnoData] = useState({nombre:"",email:"",pass:""});
-  const [newAlumnoErrors, setNewAlumnoErrors] = useState({nombre:false,email:false});
+  
   const ENTRENADOR_ID = "entrenador_principal";
   // Modo alumno: detectar ?r= en la URL
   const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
