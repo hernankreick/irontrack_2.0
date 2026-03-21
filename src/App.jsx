@@ -1,4 +1,4 @@
-import { useAlumnos } from './hooks/useAlumnos.js';import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+mport { useAlumnos } from './hooks/useAlumnos.js';
 
 
 const PATS = {
@@ -289,7 +289,7 @@ const fmtP = s => { const n=parseInt(s)||0; if(!n) return "No"; if(n<60) return 
 
 function PagoAlumno({aliasData, es, toast2, darkMode}) {
   const {bg, bgCard, bgSub, border, textMain, textMuted} = getTheme(darkMode);
-const [pagoVisible, setPagoVisible] = useState(()=>
+const [pagoVisible, setPagoVisible] = React.useState(()=>
   localStorage.getItem("it_pago_cerrado")!=="true"
 );
 if(!pagoVisible) return null;
@@ -326,9 +326,9 @@ return(
 
 function FotosSlider({fotos, es, darkMode, toast2, sb, sessionData, setFotos}) {
   const {bg, bgCard, bgSub, border, textMain, textMuted} = getTheme(darkMode);
-const [sliderPos, setSliderPos] = useState(50);
-const [isDragging, setIsDragging] = useState(false);
-const sliderRef = useRef();
+const [sliderPos, setSliderPos] = React.useState(50);
+const [isDragging, setIsDragging] = React.useState(false);
+const sliderRef = React.useRef();
 const fotoAntes = fotos[fotos.length-1];
 const fotoDespues = fotos[0];
 const calcPos = (clientX) => {
@@ -393,13 +393,13 @@ function RecordatoriosPanel({es, darkMode, toast2}) {
 const DIAS = es
   ? ["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"]
   : ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const [notifDias, setNotifDias] = useState(()=>{
+const [notifDias, setNotifDias] = React.useState(()=>{
   try{ return JSON.parse(localStorage.getItem("it_notif_dias")||"[]"); }catch(e){return [];}
 });
-const [notifHora, setNotifHora] = useState(()=>
+const [notifHora, setNotifHora] = React.useState(()=>
   localStorage.getItem("it_notif_hora")||"08:00"
 );
-const [notifActivo, setNotifActivo] = useState(()=>
+const [notifActivo, setNotifActivo] = React.useState(()=>
   localStorage.getItem("it_notif_on")==="true"
 );
 const toggleDia = (i) => {
@@ -593,8 +593,9 @@ const IconSettings = ({size=18, color="currentColor"}) => (
 function GymApp() {
   const [tab, setTab] = useState("plan");
   const [tabMain, setTabMain] = useState("entrenador"); // entrenador | alumno
-  
-  const ENTRENADOR_ID = "entrenador_principal";
+      const [onboardStep, setOnboardStep] = useState(0);
+  const [onboardDone, setOnboardDone] = useState(()=>{ try{return !!localStorage.getItem('it_onboard_done');}catch(e){return false;} });
+                          const ENTRENADOR_ID = "entrenador_principal";
   // Modo alumno: detectar ?r= en la URL
   const urlParams = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
   const sharedParam = urlParams ? urlParams.get("r") : null;
@@ -618,6 +619,25 @@ function GymApp() {
       return window.matchMedia?.("(prefers-color-scheme: dark)").matches !== false;
     }catch(e){ return true; }
   });
+
+  // ── useAlumnos ────────────────────────────────────────────────────────
+  const {
+    alumnos, setAlumnos,
+    sesiones, setSesiones,
+    alumnoActivo, setAlumnoActivo,
+    alumnoSesiones, setAlumnoSesiones,
+    alumnoProgreso, setAlumnoProgreso,
+    loadingSB, setLoadingSB,
+    newAlumnoForm, setNewAlumnoForm,
+    newAlumnoData, setNewAlumnoData,
+    newAlumnoErrors, setNewAlumnoErrors,
+    editAlumnoModal, setEditAlumnoModal,
+    editAlumnoEmail, setEditAlumnoEmail,
+    editAlumnoPass, setEditAlumnoPass,
+    cargarAlumnos,
+    notifyAlumno,
+  } = useAlumnos({ sb });
+
   const es = lang==="es";
   const [routines, setRoutines] = useState(() => { try{return JSON.parse(localStorage.getItem("it_rt")||"[]")}catch(e){return []} });
   const [progress, setProgress] = useState(() => { try{return JSON.parse(localStorage.getItem("it_pg")||"{}")}catch(e){return {}} });
@@ -662,6 +682,10 @@ function GymApp() {
   const [exModal, setExModal] = useState(null);
   const [aliasModal, setAliasModal] = useState(false);
   const [aliasData, setAliasData] = useState(null);
+  const [isOnline, setIsOnline] = useState(()=>typeof navigator!=='undefined'?navigator.onLine:true);
+  const [pendingSync, setPendingSync] = useState(()=>{
+    try{return JSON.parse(localStorage.getItem('it_pending_sync')||'[]');}catch(e){return [];}
+  });
   const [pagosEstado, setPagosEstado] = useState(()=>{
     try{ return JSON.parse(localStorage.getItem("it_pagos_estado")||"{}"); }catch(e){ return {}; }
   });
@@ -691,7 +715,39 @@ function GymApp() {
     return () => mq.removeEventListener("change", handler);
   }, []);
 
-  // ── Registrar Service Worker (PWA) ───────────────────────────────────
+  // ── Detectar online/offline y sincronizar cola ─────────────────────────
+  useEffect(()=>{
+    const goOnline = () => {
+      setIsOnline(true);
+      // Sincronizar sets pendientes
+      const pending = JSON.parse(localStorage.getItem('it_pending_sync')||'[]');
+      if(pending.length === 0) return;
+      const alumnoIdSync = sessionData?.alumnoId;
+      if(!alumnoIdSync) return;
+      pending.forEach(item => {
+        try {
+          sb.addProgreso({
+            alumno_id: alumnoIdSync,
+            ejercicio_id: item.exId,
+            kg: item.kg, reps: item.reps,
+            nota: item.note||'', fecha: item.date
+          });
+        } catch(e) {}
+      });
+      localStorage.removeItem('it_pending_sync');
+      setPendingSync([]);
+      if(pending.length > 0) toast2(pending.length+' set'+(pending.length>1?'s':'')+' sincronizados ✓');
+    };
+    const goOffline = () => setIsOnline(false);
+    window.addEventListener('online',  goOnline);
+    window.addEventListener('offline', goOffline);
+    return () => {
+      window.removeEventListener('online',  goOnline);
+      window.removeEventListener('offline', goOffline);
+    };
+  }, [sessionData]);
+
+    // ── Registrar Service Worker (PWA) ───────────────────────────────────
   useEffect(() => {
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
@@ -761,10 +817,6 @@ function GymApp() {
     return () => document.removeEventListener("visibilitychange", handleVisibility);
   }, [timer, es]);
   useEffect(() => { localStorage.setItem("it_week",String(currentWeek)); },[currentWeek]);
-  const cargarAlumnos = async () => {
-    const sbAlumnos = await sb.getAlumnos(ENTRENADOR_ID) || [];
-    setAlumnos(sbAlumnos);
-  };
 
   useEffect(() => {
     if(!readOnly && sessionData?.role==="entrenador") {
@@ -802,9 +854,6 @@ function GymApp() {
   const toast2 = msg => { setToast(msg); setTimeout(()=>setToast(null),2200); };
 
 
-  
-   
-
   const R = 26; const circ = 2*Math.PI*R;
 
   const startTimer = (secs, color) => {
@@ -833,20 +882,28 @@ function GymApp() {
       ex.max = Math.max(ex.max||0,parseFloat(kg)||0);
       return {...prev,[exId]:ex};
     });
-    // Guardar en Supabase: modo compartido O alumno con sesión
+    // Guardar en Supabase — si offline, guardar en cola local
     const alumnoIdSync = sessionData?.alumnoId || (readOnly&&sharedParam?(()=>{try{return JSON.parse(atob(sharedParam)).alumnoId}catch(e){return null}})():null);
     if(alumnoIdSync) {
       try {
         const rutData = JSON.parse(atob(sharedParam));
         if(alumnoIdSync) {
-          sb.addProgreso({
-            alumno_id: alumnoId,
-            ejercicio_id: exId,
-            kg: parseFloat(kg)||0,
-            reps: parseInt(reps)||0,
-            nota: note||"",
-            fecha: d
-          });
+          if(!isOnline) {
+            // Guardar en cola local para sincronizar después
+            const item = {exId, kg:parseFloat(kg)||0, reps:parseInt(reps)||0, note:note||'', date:d};
+            const updated = [...pendingSync, item];
+            setPendingSync(updated);
+            try{localStorage.setItem('it_pending_sync', JSON.stringify(updated));}catch(e){}
+          } else {
+            sb.addProgreso({
+              alumno_id: alumnoId,
+              ejercicio_id: exId,
+              kg: parseFloat(kg)||0,
+              reps: parseInt(reps)||0,
+              nota: note||"",
+              fecha: d
+            });
+          }
         }
       } catch(e) {}
     }
@@ -858,7 +915,11 @@ function GymApp() {
       setPrCelebration({ejercicio: exInfoCel?.name||exId, kg: newKgVal});
       setTimeout(()=>setPrCelebration(null), 2500);
     }
-    toast2("Serie guardada ✓");
+    if(!isOnline) {
+      toast2(es?'Set guardado localmente':'Set saved locally');
+    } else {
+      toast2(es?'Serie guardada ✓':'Set saved ✓');
+    }
     // Actualizar kg en la rutina para autocompletar sets restantes
     if(parseFloat(kg)>0) {
       setRoutines(prev=>prev.map(r=>({...r,days:r.days.map(d=>({...d,
@@ -1066,6 +1127,22 @@ function GymApp() {
       }}/>
 
       <div className="app-inner">
+      {!isOnline&&(
+        <div style={{
+          background:"#1f1500",borderBottom:"1px solid #F59E0B44",
+          padding:"8px 16px",display:"flex",alignItems:"center",gap:8,
+          fontSize:12,color:"#fbbf24",fontWeight:500,
+          animation:"slideUpFade .3s ease"
+        }}>
+          <div style={{width:7,height:7,borderRadius:"50%",background:"#F59E0B",flexShrink:0}}/>
+          <span>{es?"Sin conexión — sets guardados localmente":"Offline — sets saved locally"}</span>
+          {pendingSync.length>0&&(
+            <span style={{marginLeft:"auto",background:"#F59E0B22",borderRadius:10,padding:"1px 7px",fontSize:10,fontWeight:700}}>
+              {pendingSync.length} pendiente{pendingSync.length>1?"s":""}
+            </span>
+          )}
+        </div>
+      )}
       <div style={{padding:"16px 16px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",borderBottom:"1px solid "+(darkMode?"#2D4057":"#2D4057")}}>
         <div>
           <IronTrackLogo
@@ -1823,6 +1900,66 @@ function GymApp() {
                         fontSize:18,cursor:currentWeek<3?"pointer":"default",
                         display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>›</button>
                   </div>
+
+                {/* Sparkline de tendencia 30 días */}
+                {(()=>{
+                  const setsAlu = Object.values(a.progress||{})
+                    .flatMap(pg => (pg.sets||[]))
+                    .filter(s => s.kg > 0)
+                    .sort((x,y) => new Date(x.date||0) - new Date(y.date||0));
+                  if(setsAlu.length < 3) return null;
+                  // Agrupar por semana relativa (últimas 8 semanas)
+                  const now = Date.now();
+                  const buckets = {};
+                  setsAlu.forEach(s => {
+                    const d = new Date(s.date||now);
+                    const weekAgo = Math.floor((now - d.getTime()) / (7*24*60*60*1000));
+                    const bucket = Math.min(weekAgo, 7);
+                    if(!buckets[bucket]) buckets[bucket] = [];
+                    buckets[bucket].push(s.kg);
+                  });
+                  const weeks = Array.from({length:8},(_,i)=>7-i);
+                  const data = weeks.map(w => {
+                    const vals = buckets[w];
+                    return vals ? vals.reduce((a,b)=>a+b,0)/vals.length : null;
+                  }).filter(v => v !== null);
+                  if(data.length < 2) return null;
+                  const first = data[0], last = data[data.length-1];
+                  const pct = first>0 ? Math.round((last-first)/first*100) : 0;
+                  const color = pct > 0 ? "#22C55E" : pct < -2 ? "#F59E0B" : "#2563EB";
+                  const fill  = pct > 0 ? "rgba(34,197,94,.1)" : pct < -2 ? "rgba(245,158,11,.08)" : "rgba(37,99,235,.08)";
+                  const min = Math.min(...data), max = Math.max(...data), range = max-min||1;
+                  const W=120, H=24, pad=2;
+                  const pts = data.map((v,i)=>({
+                    x: pad + (i/(data.length-1))*(W-pad*2),
+                    y: H - pad - ((v-min)/range)*(H-pad*2)
+                  }));
+                  const pathD = pts.map((p,i)=>(i===0?`M${p.x},${p.y}`:`L${p.x},${p.y}`)).join(' ');
+                  const areaD = `M${pts[0].x},${H} ${pathD} L${pts[pts.length-1].x},${H} Z`;
+                  return (
+                    <div style={{
+                      display:"flex",alignItems:"center",gap:8,
+                      marginLeft:46,marginTop:6,
+                      padding:"5px 8px",borderRadius:8,
+                      background:_dm?"#162234":"#EEF2F7"
+                    }}>
+                      <span style={{fontSize:9,color:textMuted,fontWeight:600,whiteSpace:"nowrap"}}>
+                        {es?"30d carga":"30d load"}
+                      </span>
+                      <svg width={W} height={H} viewBox={`0 0 ${W} ${H}`} style={{flex:1}}>
+                        <path d={areaD} fill={fill}/>
+                        <path d={pathD} stroke={color} strokeWidth="1.5" fill="none" strokeLinejoin="round" strokeLinecap="round"/>
+                        <circle cx={pts[pts.length-1].x} cy={pts[pts.length-1].y} r="2.5" fill={color}/>
+                      </svg>
+                      <span style={{
+                        fontSize:10,fontWeight:700,color,
+                        whiteSpace:"nowrap",minWidth:30,textAlign:"right"
+                      }}>
+                        {pct>0?"+":""}{pct}%
+                      </span>
+                    </div>
+                  );
+                })()}
                 </div>
               );
             })}
@@ -1957,7 +2094,7 @@ function GymApp() {
                 const toggleBlock = (blk) => setRoutines(p=>p.map(rr=>rr.id===r.id?{...rr,days:rr.days.map((dd,ddi)=>ddi===di?{...dd,[blk]:!dd[blk]}:dd)}:rr));
                 const hasWarmup = (d.warmup||[]).length>0;
                 return(
-                <div key={di} style={{borderLeft:"2px solid #1a1d2e",paddingLeft:8,marginBottom:8}}>
+                <div key={di+"-"+d.exercises.length+"-"+(d.warmup||[]).length} style={{borderLeft:"2px solid #1a1d2e",paddingLeft:8,marginBottom:8}}>
                   <div style={{fontSize:22,fontWeight:700,color:textMuted,marginBottom:8,letterSpacing:1}}>{es?"DIA ":"DAY "}{di+1}</div>
                   <div style={{marginBottom:8}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:hasWarmup||d.showWarmup?6:0}}>
@@ -3178,17 +3315,17 @@ function WorkoutScreen({session, activeDay, activeR, allEx, progress, logSet, st
   const greenSoft = _dm?"rgba(34,197,94,0.12)":"rgba(22,163,74,0.1)";
   const greenBorder = _dm?"rgba(50,215,75,0.25)":"rgba(26,158,53,0.25)";
 
-  const [kg, setKg] = useState("");
-  const [reps, setReps] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
-  const [setFlash, setSetFlash] = useState(false);
-  const [showCheckAnim, setShowCheckAnim] = useState(false);
-  const [swipeDelta, setSwipeDelta] = useState(0);
-  const [swiping, setSwiping] = useState(false);
-  const swipeStartX = useRef(null);
-  const [note, setNote] = useState("");
-  const [pause, setPause] = useState(90);
-  const [rpe, setRpe] = useState(null);
+  const [kg, setKg] = React.useState("");
+  const [reps, setReps] = React.useState("");
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [setFlash, setSetFlash] = React.useState(false);
+  const [showCheckAnim, setShowCheckAnim] = React.useState(false);
+  const [swipeDelta, setSwipeDelta] = React.useState(0);
+  const [swiping, setSwiping] = React.useState(false);
+  const swipeStartX = React.useRef(null);
+  const [note, setNote] = React.useState("");
+  const [pause, setPause] = React.useState(90);
+  const [rpe, setRpe] = React.useState(null);
 
   const hoy = new Date().toLocaleDateString("es-AR");
   const exercises = activeDay?.exercises||[];
@@ -3209,7 +3346,7 @@ function WorkoutScreen({session, activeDay, activeR, allEx, progress, logSet, st
   const isPR = kgNum > 0 && kgNum > pr && pr > 0;
 
   // Precargar kg del ultimo set
-  useEffect(()=>{
+  React.useEffect(()=>{
     if(ex) {
       const lastKg = setsHoy[0]?.kg || progress[ex.id]?.sets?.[0]?.kg || ex.kg || "";
       setKg(lastKg ? String(lastKg) : "");
@@ -3809,13 +3946,13 @@ function Chat({alumnoId, alumnoNombre, esEntrenador, sb, darkMode, es}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [mensajes, setMensajes] = useState([]);
-  const [texto, setTexto] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [enviando, setEnviando] = useState(false);
-  const endRef = useRef();
+  const [mensajes, setMensajes] = React.useState([]);
+  const [texto, setTexto] = React.useState("");
+  const [loading, setLoading] = React.useState(true);
+  const [enviando, setEnviando] = React.useState(false);
+  const endRef = React.useRef();
 
-  useEffect(()=>{
+  React.useEffect(()=>{
     sb.getMensajes(alumnoId).then(m=>{ setMensajes(m||[]); setLoading(false); });
     // Polling cada 10 segundos
     const interval = setInterval(()=>{
@@ -3824,7 +3961,7 @@ function Chat({alumnoId, alumnoNombre, esEntrenador, sb, darkMode, es}) {
     return ()=>clearInterval(interval);
   },[]);
 
-  useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); },[mensajes]);
+  React.useEffect(()=>{ endRef.current?.scrollIntoView({behavior:"smooth"}); },[mensajes]);
 
   const enviar = async () => {
     if(!texto.trim() || enviando) return;
@@ -3890,11 +4027,11 @@ function ChatFlotante({alumnoId, alumnoNombre, sb, esEntrenador, darkMode}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [abierto, setAbierto] = useState(false);
-  const [unread, setUnread] = useState(0);
-  const [lastCount, setLastCount] = useState(0);
+  const [abierto, setAbierto] = React.useState(false);
+  const [unread, setUnread] = React.useState(0);
+  const [lastCount, setLastCount] = React.useState(0);
 
-  useEffect(()=>{
+  React.useEffect(()=>{
     if(!alumnoId) return;
     const check = ()=>sb.getMensajes(alumnoId).then(m=>{
       if(m && m.length > lastCount && !abierto) { setUnread(m.length-lastCount); }
@@ -3936,15 +4073,15 @@ function GraficoProgreso({progress, EX, readOnly, sharedParam, sb, sessionData, 
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [vista, setVista] = useState("ejercicio"); // ejercicio | semanas | volumen
-  const [selEx, setSelEx] = useState(null);
-  const [sbData, setSbData] = useState([]);
-  const [sesionesData, setSesionesData] = useState(sesiones||[]);
-  const canvasRef = useRef();
-  const canvasSem = useRef();
-  const canvasVol = useRef();
+  const [vista, setVista] = React.useState("ejercicio"); // ejercicio | semanas | volumen
+  const [selEx, setSelEx] = React.useState(null);
+  const [sbData, setSbData] = React.useState([]);
+  const [sesionesData, setSesionesData] = React.useState(sesiones||[]);
+  const canvasRef = React.useRef();
+  const canvasSem = React.useRef();
+  const canvasVol = React.useRef();
 
-  useEffect(()=>{
+  React.useEffect(()=>{
     const alumnoId = sessionData?.alumnoId || (sharedParam?(()=>{try{return JSON.parse(atob(sharedParam)).alumnoId}catch(e){return null}})():null);
     if(!alumnoId) return;
     sb.getProgreso(alumnoId).then(d=>{ if(d) setSbData(d); });
@@ -4060,7 +4197,7 @@ function GraficoProgreso({progress, EX, readOnly, sharedParam, sb, sessionData, 
   };
 
   // CANVAS: curva de progreso por ejercicio
-  useEffect(()=>{
+  React.useEffect(()=>{
     try {
     if(vista!=="ejercicio"||!selEx||!canvasRef.current) return;
     const datos = getDatos(selEx);
@@ -4119,7 +4256,7 @@ function GraficoProgreso({progress, EX, readOnly, sharedParam, sb, sessionData, 
   },[selEx,sbData,vista]);
 
   // CANVAS: comparar semanas (barras)
-  useEffect(()=>{
+  React.useEffect(()=>{
     try {
     if(vista!=="semanas"||!canvasSem.current) return;
     const datos = getVolumenSemanal();
@@ -4493,10 +4630,10 @@ function HistorialSesiones({sharedParam, sb, EX, darkMode, es, sesiones}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [sesionesData, setSesionesData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [sesionesData, setSesionesData] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
 
-  useEffect(()=>{
+  React.useEffect(()=>{
     const load = async () => {
       try {
         const rutData = JSON.parse(atob(sharedParam));
@@ -4565,18 +4702,18 @@ function FotosProgreso({sharedParam, sb, esEntrenador, darkMode, es, toast2}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [fotos, setFotos] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [uploading, setUploading] = useState(false);
-  const [fotoGrande, setFotoGrande] = useState(null);
-  const [confirmarId, setConfirmarId] = useState(null);
-  const fileRef = useRef();
+  const [fotos, setFotos] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [uploading, setUploading] = React.useState(false);
+  const [fotoGrande, setFotoGrande] = React.useState(null);
+  const [confirmarId, setConfirmarId] = React.useState(null);
+  const fileRef = React.useRef();
 
-  const alumnoId = useMemo(()=>{
+  const alumnoId = React.useMemo(()=>{
     try { return JSON.parse(atob(sharedParam)).alumnoId; } catch(e) { return null; }
   },[sharedParam]);
 
-  useEffect(()=>{
+  React.useEffect(()=>{
     if(!alumnoId) { setLoading(false); return; }
     sb.getFotos(alumnoId).then(f=>{ setFotos(f||[]); setLoading(false); });
   },[]);
@@ -4694,22 +4831,22 @@ function GestionBiblioteca({sb, customEx, setCustomEx, toast2, es, darkMode}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const allEx = useMemo(()=>[...EX,...(customEx||[])],[customEx]);
-  const [tab, setTab] = useState(0);
-  const [busq, setBusq] = useState("");
-  const [filtPat, setFiltPat] = useState("todos");
-  const [filtMus, setFiltMus] = useState("todos");
-  const [modoFiltro, setModoFiltro] = useState("patron");
-  const [editModal, setEditModal] = useState(null);
-  const [editNombre, setEditNombre] = useState("");
-  const [editYT, setEditYT] = useState("");
-  const [newNombre, setNewNombre] = useState("");
-  const [newPat, setNewPat] = useState("empuje");
-  const [newMus, setNewMus] = useState("");
-  const [newEquip, setNewEquip] = useState("");
-  const [newYT, setNewYT] = useState("");
-  const [borrarId, setBorrarId] = useState(null);
-  const [ytOverrides, setYtOverrides] = useState(()=>{try{return JSON.parse(localStorage.getItem("it_yt_ov")||"{}")}catch(e){return {}}});
+  const allEx = React.useMemo(()=>[...EX,...(customEx||[])],[customEx]);
+  const [tab, setTab] = React.useState(0);
+  const [busq, setBusq] = React.useState("");
+  const [filtPat, setFiltPat] = React.useState("todos");
+  const [filtMus, setFiltMus] = React.useState("todos");
+  const [modoFiltro, setModoFiltro] = React.useState("patron");
+  const [editModal, setEditModal] = React.useState(null);
+  const [editNombre, setEditNombre] = React.useState("");
+  const [editYT, setEditYT] = React.useState("");
+  const [newNombre, setNewNombre] = React.useState("");
+  const [newPat, setNewPat] = React.useState("empuje");
+  const [newMus, setNewMus] = React.useState("");
+  const [newEquip, setNewEquip] = React.useState("");
+  const [newYT, setNewYT] = React.useState("");
+  const [borrarId, setBorrarId] = React.useState(null);
+  const [ytOverrides, setYtOverrides] = React.useState(()=>{try{return JSON.parse(localStorage.getItem("it_yt_ov")||"{}")}catch(e){return {}}});
 
   const patrones = ["todos","empuje","traccion","rodilla","bisagra","core","movilidad","cardio","oly"];
   const musculos = ["todos","Cuadriceps","Gluteo","Isquios","Pecho","Dorsal","Hombro","Biceps","Triceps","Core","Pantorrilla"];
@@ -4961,17 +5098,17 @@ function ScannerRutina({sb, routines, setRoutines, alumnos, toast2, setTab, es, 
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [paso, setPaso] = useState(1);
-  const [procesando, setProcesando] = useState(false);
-  const [progreso, setProgreso] = useState(0);
-  const [statusMsg, setStatusMsg] = useState("");
-  const [resultado, setResultado] = useState(null);
-  const [nombreRutina, setNombreRutina] = useState("");
-  const [alumnoSel, setAlumnoSel] = useState(null);
-  const [filtroRut, setFiltroRut] = useState("todas");
-  const fileRef = useRef();
-  const fileGalRef = useRef();
-  const allEx = useMemo(()=>{
+  const [paso, setPaso] = React.useState(1);
+  const [procesando, setProcesando] = React.useState(false);
+  const [progreso, setProgreso] = React.useState(0);
+  const [statusMsg, setStatusMsg] = React.useState("");
+  const [resultado, setResultado] = React.useState(null);
+  const [nombreRutina, setNombreRutina] = React.useState("");
+  const [alumnoSel, setAlumnoSel] = React.useState(null);
+  const [filtroRut, setFiltroRut] = React.useState("todas");
+  const fileRef = React.useRef();
+  const fileGalRef = React.useRef();
+  const allEx = React.useMemo(()=>{
     try{ const c=JSON.parse(localStorage.getItem("it_customEx")||"[]"); return [...EX,...c]; }catch(e){return EX;}
   },[]);
 
@@ -5250,7 +5387,7 @@ function DashboardEntrenador({alumnos, sesiones, es, onVerAlumno, onChatAlumno, 
   const greenSoft = _dm?"rgba(34,197,94,0.12)":"rgba(22,163,74,0.1)";
   const greenBorder = _dm?"rgba(50,215,75,0.25)":"rgba(26,158,53,0.25)";
 
-  const [modalPR, setModalPR] = useState(null);
+  const [modalPR, setModalPR] = React.useState(null);
 
   const totalAlumnos = alumnos.length || 0;
   const totalSesiones = sesiones?.length || 0;
@@ -5601,8 +5738,8 @@ function LibraryAlumno({allEx, es, darkMode}) {
   const textMain = _dm?"#FFFFFF":"#0F1923";
   const textMuted = _dm?"#8B9AB2":"#64748B";
 
-  const [grupoActivo, setGrupoActivo] = useState("todos");
-  const [q, setQ] = useState("");
+  const [grupoActivo, setGrupoActivo] = React.useState("todos");
+  const [q, setQ] = React.useState("");
 
   const GRUPOS = [
     {key:"todos",     label:"TODO",       labelEn:"ALL",        icon:"⚡",  color:"#2563EB"},
@@ -5710,8 +5847,8 @@ function OnboardingScreen({es, darkMode, onDone}) {
   const textMain= _dm?"#FFFFFF":"#0F1923";
   const textMuted=_dm?"#8B9AB2":"#64748B";
 
-  const [step, setStep] = useState(0);
-  const [role, setRole] = useState(null); // "entrenador" | "alumno"
+  const [step, setStep] = React.useState(0);
+  const [role, setRole] = React.useState(null); // "entrenador" | "alumno"
 
   const STEPS = [
     {
@@ -6092,6 +6229,3 @@ function EditExModal({editEx, btn, inp, es, onSave, onClose, PATS, darkMode, all
     </div>
   );
 }
-
-
-export default GymApp;
